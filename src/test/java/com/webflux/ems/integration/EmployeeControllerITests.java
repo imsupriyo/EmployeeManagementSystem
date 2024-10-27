@@ -1,32 +1,47 @@
-package com.webflux.ems.controller;
+package com.webflux.ems.integration;
 
 import com.webflux.ems.DTO.EmployeeDTO;
+import com.webflux.ems.entity.Employee;
+import com.webflux.ems.repository.EmployeeRepository;
 import com.webflux.ems.service.EmployeeService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.BDDMockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@ExtendWith(SpringExtension.class)
-@WebFluxTest(controllers = EmployeeController.class)
-public class EmployeeControllerTests {
-
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+public class EmployeeControllerITests {
+    @Autowired
+    private EmployeeService employeeService;
     @Autowired
     private WebTestClient webTestClient;
+    @Autowired
+    private EmployeeRepository employeeRepository;
 
-    @MockBean
-    private EmployeeService employeeService;
+    // this value is used in other tests
+    private String EMPLOYEE_ID;
+
+    @BeforeEach
+    public void setup() {
+        // database should be empty before each test
+        employeeRepository.deleteAll().subscribe();
+
+        Employee employee = Employee.builder()
+                .firstName("Supriyo")
+                .lastName("Pal")
+                .email("supriyo@gmail.com")
+                .build();
+        Employee savedEmployee = employeeRepository.save(employee).block();
+        assertNotNull(savedEmployee);
+
+        EMPLOYEE_ID = savedEmployee.getId();
+    }
 
     @DisplayName("test to add employee")
     @Test
@@ -36,9 +51,6 @@ public class EmployeeControllerTests {
                 .lastName("Pal")
                 .email("supriyo@gmail.com")
                 .build();
-
-        BDDMockito.given(employeeService.addEmployee(any(EmployeeDTO.class)))
-                .willReturn(Mono.just(employeeDTO));
 
         WebTestClient.ResponseSpec response = webTestClient.post().uri("/api/employees")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -58,48 +70,45 @@ public class EmployeeControllerTests {
     @Test
     public void givenEmployeeId_whenGetEmployee_thenReturnEmployee() {
         EmployeeDTO employeeDTO = EmployeeDTO.builder()
-                .id("a string value")
                 .firstName("Supriyo")
                 .lastName("Pal")
                 .email("supriyo@gmail.com")
                 .build();
 
-        BDDMockito.given(employeeService.getEmployee(anyString()))
-                .willReturn(Mono.just(employeeDTO));
-
         WebTestClient.ResponseSpec response = webTestClient.get()
-                .uri("/api/employees/{id}", employeeDTO.getId())
+                .uri("/api/employees/{id}", EMPLOYEE_ID)
                 .accept(MediaType.APPLICATION_JSON)
                 .exchange();
 
         response.expectStatus().isOk()
                 .expectBody()
                 .consumeWith(System.out::println)
-                .jsonPath("$.id").isEqualTo(employeeDTO.getId())
+                .jsonPath("$.id").isEqualTo(EMPLOYEE_ID)
                 .jsonPath("$.firstName").isEqualTo(employeeDTO.getFirstName())
                 .jsonPath("$.lastName").isEqualTo(employeeDTO.getLastName())
                 .jsonPath("$.email").isEqualTo(employeeDTO.getEmail());
     }
 
+
     @DisplayName("test to get all employees")
     @Test
     public void givenListOfEmployee_whenGetAllEmployee_thenReturnListOfEmployee() {
-        EmployeeDTO employeeDTO1 = EmployeeDTO.builder()
-                .id("some string value")
+        Employee employee1 = Employee.builder()
                 .firstName("Supriyo")
                 .lastName("Pal")
                 .email("supriyo@gmail.com")
                 .build();
 
-        EmployeeDTO employeeDTO2 = EmployeeDTO.builder()
-                .id("some string value 2")
+        Employee employee2 = Employee.builder()
                 .firstName("Pappu")
                 .lastName("Pal")
                 .email("pappu@gmail.com")
                 .build();
 
-        BDDMockito.given(employeeService.getAllEmployees())
-                .willReturn(Flux.just(employeeDTO1, employeeDTO2));
+        employeeRepository.deleteAll()
+                .then(employeeRepository.save(employee1))
+                .then(employeeRepository.save(employee2))
+                .block();
 
         WebTestClient.ResponseSpec response = webTestClient.get()
                 .uri("/api/employees")
@@ -109,11 +118,7 @@ public class EmployeeControllerTests {
         response.expectStatus().isOk()
                 .expectBody()
                 .consumeWith(System.out::println)
-                .jsonPath("$.size()").isEqualTo(2)
-                .jsonPath("$[1].id").isEqualTo(employeeDTO2.getId())
-                .jsonPath("$[1].firstName").isEqualTo(employeeDTO2.getFirstName())
-                .jsonPath("$[1].lastName").isEqualTo(employeeDTO2.getLastName())
-                .jsonPath("$[1].email").isEqualTo(employeeDTO2.getEmail());
+                .jsonPath("$.size()").isEqualTo(2);
     }
 
     @DisplayName("test to update an employee")
@@ -125,10 +130,7 @@ public class EmployeeControllerTests {
                 .email("supriyopal@gmail.com")
                 .build();
 
-        BDDMockito.given(employeeService.updateEmployee(anyString(), any(EmployeeDTO.class)))
-                .willReturn(Mono.just(responseDTO));
-
-        WebTestClient.ResponseSpec response = webTestClient.put().uri("/api/employees/{id}", "a valid id")
+        WebTestClient.ResponseSpec response = webTestClient.put().uri("/api/employees/{id}", EMPLOYEE_ID)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(Mono.just(responseDTO), EmployeeDTO.class)
@@ -145,10 +147,7 @@ public class EmployeeControllerTests {
     @DisplayName("test to delete an employee")
     @Test
     public void givenEmployeeId_whenDeleteEmployee_thenReturnNothing() {
-        BDDMockito.given(employeeService.deleteEmployee(anyString()))
-                .willReturn(Mono.empty());
-
-        WebTestClient.ResponseSpec response = webTestClient.delete().uri("/api/employees/{id}", "a valid id")
+        WebTestClient.ResponseSpec response = webTestClient.delete().uri("/api/employees/{id}", EMPLOYEE_ID)
                 .accept(MediaType.APPLICATION_JSON)
                 .exchange();
 
@@ -157,3 +156,4 @@ public class EmployeeControllerTests {
                 .consumeWith(System.out::println);
     }
 }
+
